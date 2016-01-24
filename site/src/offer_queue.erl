@@ -17,18 +17,13 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {notify_pid, receiver_pid}).
+-record(state, {peer_id, notify_pid}).
 
-send_offer(ReceiverPid) ->
-	gen_server:cast(?SERVER, {offer, self(), ReceiverPid}),
+send_offer(Peerid) ->
+	gen_server:cast(?SERVER, {offer, self(), Peerid}),
 	receive
-		{CR, OtherPid} when CR == caller orelse CR==receiver ->
-			case is_pid(OtherPid) andalso is_process_alive(OtherPid) of
-				true ->
-					error_logger:info_msg("Connecting to ~p",[OtherPid]),
-					{CR, OtherPid};
-				false -> send_offer(ReceiverPid)
-			end
+		{CR, OtherPeerid} when CR == caller orelse CR==receiver ->
+			{CR, OtherPeerid}
 	end.
 
 start() ->
@@ -43,12 +38,14 @@ init([]) ->
 handle_call(_Req, _From, State) ->
 	{reply, ok, State}.
 
-handle_cast({offer, NotifyPid, ReceiverPid}, State=#state{notify_pid=undefined, receiver_pid=undefined}) ->
-	{noreply, State#state{notify_pid=NotifyPid, receiver_pid=ReceiverPid}};
-handle_cast({offer, NotifyPidA, ReceiverPidA}, State=#state{notify_pid=NotifyPidB, receiver_pid=ReceiverPidB}) ->
-	NotifyPidA ! {receiver, ReceiverPidB},
-	NotifyPidB ! {caller, ReceiverPidA},
-	{noreply, State#state{notify_pid=undefined, receiver_pid=undefined}}.
+handle_cast({offer, NotifyPid, Peerid}, State=#state{peer_id=undefined}) ->
+	error_logger:info_msg("Adding Peerid: ~p",[Peerid]),
+	{noreply, State#state{notify_pid=NotifyPid, peer_id=Peerid}};
+handle_cast({offer, NotifyPidA, PeeridA}, State=#state{notify_pid=NotifyPidB, peer_id=PeeridB}) ->
+	error_logger:info_msg("Informing Peers of a match.~n~p <= ~p~n~p <= ~p~n", [NotifyPidA, PeeridB, NotifyPidB, PeeridA]),
+	NotifyPidA ! {receiver, PeeridB},
+	NotifyPidB ! {caller, PeeridA},
+	{noreply, State#state{notify_pid=undefined, peer_id=undefined}}.
 
 handle_info(_Info, State) ->
 	{noreply, State}.
