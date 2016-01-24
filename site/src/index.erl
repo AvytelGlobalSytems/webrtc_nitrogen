@@ -8,56 +8,31 @@ main() -> #template { file="./site/templates/bare.html" }.
 title() -> "Welcome to Nitrogen".
 
 body() ->
-	wf:wire(#api{name=sendoffer}),
+	{ok, Pid} = wf:comet(fun() -> receive_loop() end),
+	wf:continue(connect, fun() -> offer_queue:send_offer(Pid) end, infinity),
 	[
-		"<script>var conn = new RTCPeerConnection(null);
-		
-		conn.onaddstream = function(event) {
-			var tag = obj('my_video');
-			attachMediaString(tag, event.stream);
-		},
-
-		function accept_conn(desc_str) {
-			var desc = JSON.parse(desc_str);
-			console.log(desc);
-			conn.setRemoteDescription(new RTCSessionDescription(desc), function() {
-				if(conn.remoteDescription.type == 'offer') {
-					conn.addStream(stream);
-					conn.createAnswer(function(desc) {
-						conn.setLocalDescription(desc, function() {
-							JSON.stringify(
-				}
-			})
-		}
-		</script>",
-		#video{id=my_video, autoplay=true},
-		#button{text="Start", postback=start}
+	 	#panel{id=waiting, text="Waiting for a connection"},
+		#video{id=my_video, autoplay=true}
 	].
 
+receive_loop() ->
+	error_logger:info_msg("Comet Pid: ~p",[self()]),
+	receive
+		{rtc, Msg} ->
+			error_logger:info_msg("~p Received: ~p",[self(), Msg]),
+			wf:wire(#js_fun{function=webrtc_message, args=[Msg]});
+		{alert, Msg} ->
+			wf:wire(#alert{text=Msg})
+	end,
+	wf:flush(),
+	receive_loop().
 	
-start_stream() ->
-	wf:wire("getUserMedia({video: true, audio: true}, function(stream) {
-		conn.addStream(stream);
-		conn.createOffer(function(desc) {
-			conn.setLocalDescription(desc, function() {
-				page.sendoffer(JSON.stringify(desc));
-			})
-		})			
-	}, function(event) {
-		alert('something went wrong')
-	})").
+api_event(send_rtc, Pid, [Obj]) ->
+	error_logger:info_msg("api_event: ~p",[Obj]),
+	Pid ! {rtc, Obj}.
 
-api_event(sendoffer, _, [Desc]) ->
-	gen_server:cast(offer_queue, {offer, Desc, self()}),
-	wf:continue(offer, fun() ->
-		receive
-			{offer, ReceivedDesc} ->
-				ReceivedDesc
-		end
-	end, infinity).
-
-continue(offer, Desc) ->
-	wf:wire(#js_fun{function=accept_conn, args=[Desc]}).
-
-event(start) ->
-	start_stream().
+continue(connect, {CR, Pid}) ->
+	wf:state(pid, Pid),
+	wf:remove(waiting),
+	wf:wire(page, page, #api{name=send_rtc, tag=Pid}),
+	wf:wire(#event{type=timer, delay=1000, actions=#js_fun{function=init_webrtc, args=[CR]}}).
