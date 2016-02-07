@@ -3,7 +3,7 @@ var conn;
 var peer;
 
 function init_webrtc(my_peerid) {
-	peer = new Peer(my_peerid, {key: "webrtctest", host: "webrtctest.com", port: 9000, debug: 3});
+	peer = new Peer(my_peerid, {key: "webrtctest", host: "webrtc.sigma-star.com", port: 9000, debug: 3});
 
 	peer.on('call', function(call) {
 		navigator.getUserMedia({video: true, auto: false}, function(stream) {
